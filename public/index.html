@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Core - Monorepo</title>
+    <title>Quantum Core - Monorepo v2.1</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; background-color: #0f0f0f; color: #f0f0f0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
@@ -27,11 +27,13 @@
     </div>
 
     <script>
-        const SUPABASE_URL = 'GANTI_DENGAN_URL_SUPABASE_ANDA';
-        const SUPABASE_ANON_KEY = 'GANTI_DENGAN_ANON_KEY_SUPABASE_ANDA';
-        // API URL sekarang bersifat relatif, karena berada di proyek yang sama
+        // Kredensial ini akan diambil dari Environment Variables Vercel
+        const SUPABASE_URL = '%SUPABASE_URL%';
+        const SUPABASE_ANON_KEY = '%SUPABASE_ANON_KEY%';
         const BACKEND_API_URL = '/api';
 
+        console.log('Script loaded. Supabase URL:', SUPABASE_URL.includes('GANTI') ? 'NOT SET' : 'SET');
+        
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         const textInput = document.getElementById('text-input');
         const analyzeButton = document.getElementById('analyze-button');
@@ -42,30 +44,33 @@
             const text = textInput.value;
             if (!text) { alert('Silakan masukkan teks terlebih dahulu.'); return; }
 
-            statusDiv.textContent = 'Status: Menghubungi Backend AI (mungkin butuh waktu jika server sedang "tidur")...';
+            statusDiv.textContent = 'Status: Menghubungi Backend AI di ' + BACKEND_API_URL;
             resultDiv.textContent = '';
             analyzeButton.disabled = true;
+            console.log('Button clicked. Fetching from:', BACKEND_API_URL);
 
             try {
-                // Membuat AbortController untuk mengatur timeout yang lebih lama (30 detik)
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 detik
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
 
                 const apiResponse = await fetch(BACKEND_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: text }),
-                    signal: controller.signal // Menambahkan sinyal timeout
+                    signal: controller.signal
                 });
                 
-                clearTimeout(timeoutId); // Batalkan timeout jika berhasil
+                clearTimeout(timeoutId);
+                console.log('API Response Status:', apiResponse.status);
 
                 if (!apiResponse.ok) {
-                    const errorData = await apiResponse.json();
-                    throw new Error(`API Error: ${errorData.error || apiResponse.statusText}`);
+                    const errorText = await apiResponse.text();
+                    console.error('API Error Response Body:', errorText);
+                    throw new Error(`API Error: Status ${apiResponse.status}`);
                 }
 
                 const analysisData = await apiResponse.json();
+                console.log('Analysis Data:', analysisData);
                 const sentiment = analysisData[0].label;
                 const score = analysisData[0].score.toFixed(4);
 
@@ -73,19 +78,18 @@
                 resultDiv.textContent = `Sentiment: ${sentiment}\nConfidence: ${score}`;
 
                 const review_id = `monorepo-test-${Date.now()}`;
-                const { error: dbError } = await supabaseClient
+                const { data, error: dbError } = await supabaseClient
                     .from('analysis_results')
-                    .insert({ id: review_id, original_text: text, sentiment, confidence_score: score });
+                    .insert({ id: review_id, original_text: text, sentiment, confidence_score: score })
+                    .select();
 
                 if (dbError) { throw new Error(`Database Error: ${dbError.message}`); }
+                
+                console.log('Saved to DB:', data);
                 statusDiv.textContent = `Status: Berhasil disimpan ke database.`;
             } catch (error) {
-                if (error.name === 'AbortError') {
-                    statusDiv.textContent = 'Error: Permintaan ke server timeout (lebih dari 30 detik). Coba lagi.';
-                } else {
-                    statusDiv.textContent = `Error: ${error.message}`;
-                }
-                console.error(error);
+                statusDiv.textContent = `Error: ${error.message}`;
+                console.error('Caught an error:', error);
             } finally {
                 analyzeButton.disabled = false;
             }
@@ -93,3 +97,4 @@
     </script>
 </body>
 </html>
+
